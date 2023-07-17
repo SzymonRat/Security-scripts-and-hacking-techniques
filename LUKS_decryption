@@ -1,0 +1,15 @@
+Dd if=<input_luks_file> of=<output_file> bs=512 count=4097
+
+#the output file  itself will be a hash
+Crack the result hash file with hashcat and you will get a password
+
+Cryptsetup luksOpen <original_luks_file> <output_file>
+#you will  be asked for password so type the password from hashcat
+
+Check
+Ls /dev/mapper   #and you should see your file
+
+Mount /dev/mapper/<your_file> /mnt
+
+Cd /mnt   #and you should see all the files
+
