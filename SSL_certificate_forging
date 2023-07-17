@@ -1,0 +1,41 @@
+When I found  Certificate authority private key (“Begin Certificate Request”) and corresponding PEM certificate (certificate authority public key) , I can forge SSL/TLS certificate
+
+Forging the certificate will allow you to bypass secure connection failed error in the browser
+
+Mv RSA_private_key ca.key
+
+Now I need PEM certificate (public key)
+
+#it may be obtained by exporting HTTPS certificate from the browser #or by finding on the target somewhere around
+ 
+Mv PEM_certificate ca.crt
+
+to read the certificate
+
+openssl req -in <file> -noout -text
+
+
+
+To check if I found matching private and public key 
+
+Openssl pkey –in ca.key -pubout
+
+Openssl x509 –in ca.crt -pubkey –noout
+
+If they do match then
+
+Openssl genrsa –out client.key 4096
+
+Openssl req –new –key client.key -out client.csr 
+
+Openssl x509 –req –in client.csr -CA ca.crt -CAkey ca.key -set_serial 9001 –extensions client –days 7 –outform PEM –out client.cer
+                                                                                               Client.pem
+
+Openssl pkcs12 –export –inkey client.key -in client.cer -out client.p12 (for linux)/Client.pfx (for windows)
+
+
+
+Then add your client.p12/pfx certificate and ca.crt to the browser certificates
+
+#sometimes you need to restart the browser 
+if when importing pfx/p12 file in the browser i am asked for the password in order to get it, I need to crack the certificate 
