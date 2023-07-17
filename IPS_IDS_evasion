@@ -1,0 +1,11 @@
+add garbage data to the package
+
+nmap -A <victim_ip> –data-length 25
+
+b) sends package with the TTL value enough to arrive to the IPS/IDS but not enough to arrive to the host, and then send packet with a normal value of TTL
+
+nmap -A <vicitm_ip> –ttlvalue <value>
+
+c) fragment the packet and send them
+
+nmap -A <victim_ip> -f
